@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'disabled_screen.dart';
 import 'non_disabled_screen.dart';
+import '../feature/fade_transition.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -57,7 +58,7 @@ class HomeScreen extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const DisabledScreen()),
+                        NoTransitionPageRoute(builder: (_) => const DisabledScreen()),
                       );
                     },
                     style: ElevatedButton.styleFrom(
@@ -81,7 +82,7 @@ class HomeScreen extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const DisabledScreen()),
+                        NoTransitionPageRoute(builder: (_) => const NonDisabledScreen()),
                       );
                     },
                     style: ElevatedButton.styleFrom(

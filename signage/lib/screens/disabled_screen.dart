@@ -1,6 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'dart:async';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
 class DisabledScreen extends StatefulWidget {
   const DisabledScreen({super.key});
@@ -12,10 +16,12 @@ class DisabledScreen extends StatefulWidget {
 class _DisabledScreenState extends State<DisabledScreen> {
   String detectedText = '';
   bool isDetecting = false;
-  Timer? mockDetectionTimer;
+  Timer? detectionTimer;
 
   CameraController? _cameraController;
   bool _isCameraInitialized = false;
+
+  final String backendUrl = 'http://192.168.0.7:5000/predict'; // 🔥 Flask endpoint
 
   @override
   void initState() {
@@ -36,22 +42,50 @@ class _DisabledScreenState extends State<DisabledScreen> {
     );
 
     await _cameraController!.initialize();
-    setState(() {
-      _isCameraInitialized = true;
-    });
+    setState(() => _isCameraInitialized = true);
   }
 
-  void startMockDetection() {
+  /// 📸 Capture image and send to Flask backend
+  Future<void> _sendFrameToServer() async {
+    if (!_cameraController!.value.isInitialized) return;
+
+    try {
+      // Capture image
+      final picture = await _cameraController!.takePicture();
+
+      // Flask can’t read temporary Android paths directly, so we re-save it
+      final dir = await getTemporaryDirectory();
+      final newPath = '${dir.path}/frame.jpg';
+      final File imageFile = await File(picture.path).copy(newPath);
+
+      // Send image to Flask
+      var request = http.MultipartRequest('POST', Uri.parse(backendUrl));
+      request.files.add(await http.MultipartFile.fromPath('image', imageFile.path));
+
+      var response = await request.send();
+
+      if (response.statusCode == 200) {
+        final resBody = await response.stream.bytesToString();
+        final json = jsonDecode(resBody);
+        setState(() => detectedText = json['prediction'] ?? 'Unknown');
+      } else {
+        setState(() => detectedText = 'Error: ${response.statusCode}');
+      }
+    } catch (e) {
+      setState(() => detectedText = 'Error: $e');
+    }
+  }
+
+  void startDetection() {
     setState(() => isDetecting = true);
-    mockDetectionTimer = Timer.periodic(Duration(seconds: 2), (timer) {
-      setState(() {
-        detectedText = _getMockGesture();
-      });
+
+    detectionTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      await _sendFrameToServer();
     });
   }
 
   void stopDetection() {
-    mockDetectionTimer?.cancel();
+    detectionTimer?.cancel();
     setState(() => isDetecting = false);
   }
 
@@ -59,15 +93,9 @@ class _DisabledScreenState extends State<DisabledScreen> {
     setState(() => detectedText = '');
   }
 
-  String _getMockGesture() {
-    final mockGestures = ['Hello', 'Yes', 'No', 'Thank you', 'What?'];
-    mockGestures.shuffle();
-    return mockGestures.first;
-  }
-
   @override
   void dispose() {
-    mockDetectionTimer?.cancel();
+    detectionTimer?.cancel();
     _cameraController?.dispose();
     super.dispose();
   }
@@ -103,7 +131,6 @@ class _DisabledScreenState extends State<DisabledScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Detected Gesture Header
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -113,7 +140,7 @@ class _DisabledScreenState extends State<DisabledScreen> {
             ),
             const SizedBox(height: 8),
 
-            // Detected Text Container
+            // Detected Text Display
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
@@ -121,13 +148,6 @@ class _DisabledScreenState extends State<DisabledScreen> {
                 color: Colors.grey[900],
                 border: Border.all(color: Colors.greenAccent),
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 6,
-                    offset: const Offset(0, 3),
-                  )
-                ],
               ),
               child: Text(
                 detectedText.isNotEmpty
@@ -143,7 +163,6 @@ class _DisabledScreenState extends State<DisabledScreen> {
 
             const SizedBox(height: 24),
 
-            // Action Buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -151,7 +170,7 @@ class _DisabledScreenState extends State<DisabledScreen> {
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.play_arrow),
                     label: const Text('Start'),
-                    onPressed: isDetecting ? null : startMockDetection,
+                    onPressed: isDetecting ? null : startDetection,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.black,
@@ -186,7 +205,7 @@ class _DisabledScreenState extends State<DisabledScreen> {
                   ),
                 ),
               ],
-            )
+            ),
           ],
         ),
       ),
